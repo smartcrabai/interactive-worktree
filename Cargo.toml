@@ -4,7 +4,7 @@ description = "Interactive CLI for managing git worktrees"
 edition = "2024"
 license = "Apache-2.0"
 name = "interactive-worktree"
-repository = "https://github.com/takumi3488/interactive-worktree"
+repository = "https://github.com/smartcrabai/interactive-worktree"
 version = "0.1.8"
 
 [[bin]]
