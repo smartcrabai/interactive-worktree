@@ -62,6 +62,12 @@ const COMMANDS: &[Command] = &[
 ];
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "-v" || a == "--version") {
+        println!("iwt {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+
     if !git::is_inside_repo() {
         eprintln!(
             "{} Not inside a git repository.",
