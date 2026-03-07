@@ -1,4 +1,5 @@
 mod commands;
+mod gh;
 mod git;
 mod gtr;
 
@@ -11,6 +12,7 @@ use inquire::{InquireError, Select};
 #[derive(Debug, Clone, Copy)]
 enum Command {
     New,
+    Pr,
     List,
     Rm,
     Editor,
@@ -29,6 +31,7 @@ impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Command::New => write!(f, "new      - Create a new worktree"),
+            Command::Pr => write!(f, "pr       - Create worktree from pull request"),
             Command::List => write!(f, "list     - List all worktrees"),
             Command::Rm => write!(f, "rm       - Remove worktree(s)"),
             Command::Editor => write!(f, "editor   - Open worktree in editor"),
@@ -47,6 +50,7 @@ impl fmt::Display for Command {
 
 const COMMANDS: &[Command] = &[
     Command::New,
+    Command::Pr,
     Command::List,
     Command::Rm,
     Command::Editor,
@@ -103,6 +107,7 @@ fn main() {
             Ok(cmd) => {
                 let result = match cmd {
                     Command::New => commands::new::run(),
+                    Command::Pr => commands::pr::run(),
                     Command::List => commands::list::run(),
                     Command::Rm => commands::rm::run(),
                     Command::Editor => commands::editor::run(),

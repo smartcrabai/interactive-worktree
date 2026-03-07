@@ -132,3 +132,22 @@ pub fn all_worktree_branches() -> Result<Vec<String>> {
     let wts = worktree_list()?;
     Ok(wts.into_iter().map(|w| w.branch).collect())
 }
+
+/// Fetch a specific branch from a remote.
+pub fn fetch(remote: &str, branch: &str) -> Result<()> {
+    let output = Command::new("git")
+        .args(["fetch", remote, branch])
+        .output()
+        .context("Failed to execute git fetch")?;
+
+    if !output.status.success() {
+        bail!(
+            "git fetch {} {} failed: {}",
+            remote,
+            branch,
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    Ok(())
+}
