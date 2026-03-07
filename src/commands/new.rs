@@ -13,7 +13,6 @@ pub fn run() -> Result<()> {
 
     let mut args = vec!["new", &branch];
     let ref_value: String;
-    let mut ai_tool = String::new();
 
     match from {
         "Current branch" => args.push("--from-current"),
@@ -30,21 +29,25 @@ pub fn run() -> Result<()> {
         .with_help_message("Action to take after creating the worktree")
         .prompt()?;
 
-    match post {
-        "Open in editor" => args.push("--editor"),
+    let ai_tool = match post {
+        "Open in editor" => {
+            args.push("--editor");
+            None
+        }
         "Start AI tool" => {
-            ai_tool = Text::new("AI tool:")
+            let tool = Text::new("AI tool:")
                 .with_placeholder("claude, aider, copilot, codex, ...")
                 .with_help_message("Enter tool name, or press Enter for default")
                 .prompt()?;
-            if ai_tool.is_empty() {
-                // デフォルトツール: --ai フラグのみ
+            if tool.is_empty() {
                 args.push("--ai");
+                None
+            } else {
+                Some(tool)
             }
-            // ツール指定ありの場合は作成後に別途 git gtr ai で起動
         }
-        _ => {}
-    }
+        _ => None,
+    };
 
     let no_copy = Confirm::new("Skip file copying?")
         .with_default(false)
@@ -57,8 +60,8 @@ pub fn run() -> Result<()> {
     gtr::exec(&args)?;
 
     // ツール名を指定した場合、別途 git gtr ai で指定ツールを起動
-    if !ai_tool.is_empty() {
-        gtr::exec(&["ai", &branch, "--ai", &ai_tool])?;
+    if let Some(tool) = &ai_tool {
+        gtr::exec(&["ai", &branch, "--ai", tool])?;
     }
 
     Ok(())
