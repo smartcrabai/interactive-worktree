@@ -103,7 +103,7 @@ fn main() {
             .prompt();
 
         match selection {
-            Ok(Command::Quit) => break,
+            Ok(Command::Quit) | Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => break,
             Ok(cmd) => {
                 let result = match cmd {
                     Command::New => commands::new::run(),
@@ -126,7 +126,6 @@ fn main() {
                 }
                 println!();
             }
-            Err(InquireError::OperationCanceled | InquireError::OperationInterrupted) => break,
             Err(e) => {
                 eprintln!("{} {e}", style("error:").red().bold());
                 break;

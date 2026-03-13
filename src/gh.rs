@@ -23,8 +23,7 @@ impl fmt::Display for PullRequest {
         let login = self
             .author
             .as_ref()
-            .map(|a| a.login.as_str())
-            .unwrap_or("ghost");
+            .map_or("ghost", |a| a.login.as_str());
         write!(
             f,
             "#{} {} ({}) [{}]",
