@@ -15,7 +15,13 @@ pub fn run() -> Result<()> {
     let candidates: Vec<&String> = if merged_only {
         non_main
             .iter()
-            .filter(|b| git::is_merged(b, &default_branch).unwrap_or(false))
+            .filter(|b| match git::is_merged(b, &default_branch) {
+                Ok(merged) => merged,
+                Err(e) => {
+                    eprintln!("Warning: could not check if '{b}' is merged: {e}");
+                    false
+                }
+            })
             .collect()
     } else {
         non_main.iter().collect()

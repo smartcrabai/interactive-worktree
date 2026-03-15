@@ -74,7 +74,9 @@ pub(crate) fn run_with_post_prompt(opts: &NewWorktreeOpts) -> Result<()> {
         worktree_ops::copy_files(&path, None)?;
     }
 
-    worktree_ops::run_hook("gtr.hook.postCreate", &path).ok();
+    if let Err(e) = worktree_ops::run_hook("gtr.hook.postCreate", &path) {
+        eprintln!("Warning: hook 'gtr.hook.postCreate' failed: {e}");
+    }
 
     match post_action {
         PostAction::Editor => worktree_ops::open_editor(&path, None)?,

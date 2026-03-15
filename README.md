@@ -42,7 +42,7 @@ iwt
 
 ### Library
 
-`interactive-worktree` はライブラリクレートとしても利用でき、`git` / `gh` モジュールを公開しています。
+`interactive-worktree` can also be used as a library crate and exposes the `git` and `gh` modules.
 
 ### Running tests
 

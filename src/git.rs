@@ -116,6 +116,7 @@ pub fn worktree_list() -> Result<Vec<WorktreeInfo>> {
 /// Add a new worktree at `path` for `branch`.
 /// If `start_point` is `None`, uses the current HEAD.
 /// If `branch` already exists locally, do not pass `-b` (checkout existing branch).
+/// Note: `start_point` is silently ignored when the branch already exists locally.
 ///
 /// # Errors
 ///

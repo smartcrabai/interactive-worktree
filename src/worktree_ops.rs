@@ -201,6 +201,9 @@ fn copy_matching(
         }
 
         if includes.iter().any(|p| pattern_matches(&name_str, p)) {
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
             let target_file = target_dir.join(&name);
             std::fs::copy(entry.path(), &target_file)
                 .with_context(|| format!("Failed to copy '{name_str}'"))?;
@@ -222,13 +225,12 @@ pub fn run_hook(hook_key: &str, worktree_path: &str) -> Result<()> {
         return Ok(());
     };
 
-    let parts: Vec<&str> = hook_cmd.split_whitespace().collect();
-    let Some((cmd, args)) = parts.split_first() else {
+    if hook_cmd.is_empty() {
         return Ok(());
-    };
+    }
 
-    let status = Command::new(cmd)
-        .args(args)
+    let status = Command::new("/bin/sh")
+        .args(["-c", &hook_cmd])
         .current_dir(worktree_path)
         .status()
         .with_context(|| format!("Failed to run hook '{hook_key}'"))?;
@@ -254,12 +256,13 @@ pub fn run_hook(hook_key: &str, worktree_path: &str) -> Result<()> {
 pub fn remove_with_hooks(path: &str, branch: &str, delete_branch: bool, force: bool) -> Result<()> {
     run_hook("gtr.hook.preRemove", path).ok();
 
+    let repo_root = git::repo_root()?;
     git::worktree_remove(path, force)?;
 
     if delete_branch && let Err(e) = git::branch_delete(branch, force) {
         eprintln!("Failed to delete branch '{branch}': {e}");
     }
 
-    run_hook("gtr.hook.postRemove", path).ok();
+    run_hook("gtr.hook.postRemove", &repo_root).ok();
     Ok(())
 }

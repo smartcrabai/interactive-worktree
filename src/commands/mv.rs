@@ -25,7 +25,12 @@ pub fn run() -> Result<()> {
     let new_path = worktree_ops::worktree_dir_path(&new_name)?;
 
     git::branch_rename(&branch, &new_name)?;
-    git::worktree_move(&old_path, &new_path)?;
+    if let Err(e) = git::worktree_move(&old_path, &new_path) {
+        if let Err(rb_err) = git::branch_rename(&new_name, &branch) {
+            eprintln!("Failed to rollback branch rename: {rb_err}");
+        }
+        return Err(e);
+    }
 
     println!("Renamed '{branch}' → '{new_name}'");
     Ok(())

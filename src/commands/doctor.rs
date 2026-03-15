@@ -8,11 +8,18 @@ pub fn run() -> Result<()> {
     // Git version
     let output = Command::new("git").arg("--version").output();
     match output {
-        Ok(o) => {
+        Ok(o) if o.status.success() => {
             let version = String::from_utf8_lossy(&o.stdout);
             println!("[OK] {}", version.trim());
         }
-        Err(e) => println!("[ERR] git not found: {e}"),
+        Ok(_) => {
+            println!("[ERR] git returned non-zero exit status");
+            return Ok(());
+        }
+        Err(e) => {
+            println!("[ERR] git not found: {e}");
+            return Ok(());
+        }
     }
 
     // Worktrees
