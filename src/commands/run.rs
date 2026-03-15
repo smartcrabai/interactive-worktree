@@ -1,8 +1,7 @@
 use anyhow::{Result, bail};
 use inquire::{Select, Text};
 
-use crate::git;
-use crate::gtr;
+use crate::{git, worktree_ops};
 
 pub fn run() -> Result<()> {
     let branches = git::all_worktree_branches()?;
@@ -21,8 +20,5 @@ pub fn run() -> Result<()> {
         bail!("No command provided");
     }
 
-    let mut args = vec!["run", &branch];
-    args.extend(parts);
-
-    gtr::exec(&args)
+    worktree_ops::run_command(&branch, &parts)
 }

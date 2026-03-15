@@ -1,7 +1,8 @@
 use anyhow::{Result, bail};
 use inquire::Select;
 
-use crate::{commands::run_with_post_prompt, gh, git};
+use crate::commands::{NewWorktreeOpts, run_with_post_prompt};
+use crate::{gh, git};
 
 pub fn run() -> Result<()> {
     let prs = gh::pr_list()?;
@@ -16,13 +17,10 @@ pub fn run() -> Result<()> {
     let branch = pr.head_ref_name;
     git::fetch("origin", &branch)?;
 
-    let from = format!("origin/{branch}");
-    let args = vec![
-        "new".to_string(),
-        branch.clone(),
-        "--from".to_string(),
-        from,
-    ];
+    let start_point = Some(format!("origin/{branch}"));
 
-    run_with_post_prompt(args, &branch)
+    run_with_post_prompt(&NewWorktreeOpts {
+        branch,
+        start_point,
+    })
 }

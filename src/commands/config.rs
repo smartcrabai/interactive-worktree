@@ -1,7 +1,7 @@
 use anyhow::Result;
 use inquire::{Select, Text};
 
-use crate::gtr;
+use crate::git;
 
 const CONFIG_KEYS: &[&str] = &[
     "gtr.worktrees.dir",
@@ -26,19 +26,33 @@ pub fn run() -> Result<()> {
     let action = Select::new("Config action:", actions).prompt()?;
 
     match action {
-        "show" => gtr::exec(&["config", "show"]),
+        "show" => {
+            let pairs = git::config_list("^gtr\\.")?;
+            if pairs.is_empty() {
+                println!("No gtr configuration found.");
+            } else {
+                for (k, v) in &pairs {
+                    println!("{k} = {v}");
+                }
+            }
+            Ok(())
+        }
         "get" => {
             let key = Select::new("Config key:", CONFIG_KEYS.to_vec()).prompt()?;
-            gtr::exec(&["config", "get", key])
+            match git::config_get(key)? {
+                Some(v) => println!("{v}"),
+                None => println!("(not set)"),
+            }
+            Ok(())
         }
         "set" => {
             let key = Select::new("Config key:", CONFIG_KEYS.to_vec()).prompt()?;
             let value = Text::new("Value:").prompt()?;
-            gtr::exec(&["config", "set", key, &value])
+            git::config_set(key, &value)
         }
         "unset" => {
             let key = Select::new("Config key:", CONFIG_KEYS.to_vec()).prompt()?;
-            gtr::exec(&["config", "unset", key])
+            git::config_unset(key)
         }
         _ => unreachable!(),
     }

@@ -12,17 +12,29 @@ pub mod pr;
 pub mod rm;
 pub mod run;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use inquire::{Confirm, Select, Text};
 
-use crate::gtr;
+use crate::{git, worktree_ops};
 
-/// Prompt for post-creation action and return the extra args to pass to `gtr new`,
-/// plus an optional AI tool name to invoke separately via `gtr ai`.
-pub(crate) fn prompt_post_args() -> Result<(Vec<String>, Option<String>)> {
-    let mut extra: Vec<String> = Vec::new();
-    let mut ai_tool: Option<String> = None;
+/// Action to take after creating a worktree.
+pub(crate) enum PostAction {
+    None,
+    Editor,
+    Ai(Option<String>),
+}
 
+/// Options for creating a new worktree.
+pub(crate) struct NewWorktreeOpts {
+    pub branch: String,
+    /// Start point for the new branch. `None` means current HEAD.
+    pub start_point: Option<String>,
+}
+
+/// Prompt the user for a post-creation action and whether to skip file copying.
+///
+/// Returns `(PostAction, skip_copy)`.
+pub(crate) fn prompt_post_args() -> Result<(PostAction, bool)> {
     let post = Select::new(
         "After creation:",
         vec!["None", "Open in editor", "Start AI tool"],
@@ -30,43 +42,78 @@ pub(crate) fn prompt_post_args() -> Result<(Vec<String>, Option<String>)> {
     .with_help_message("Action to take after creating the worktree")
     .prompt()?;
 
-    match post {
-        "Open in editor" => extra.push("--editor".to_string()),
+    let action = match post {
+        "Open in editor" => PostAction::Editor,
         "Start AI tool" => {
             let tool = Text::new("AI tool:")
                 .with_placeholder("claude, aider, copilot, codex, ...")
                 .with_help_message("Enter tool name, or press Enter for default")
                 .prompt()?;
-            if tool.is_empty() {
-                extra.push("--ai".to_string());
-            } else {
-                ai_tool = Some(tool);
-            }
+            let tool_opt = if tool.is_empty() { None } else { Some(tool) };
+            PostAction::Ai(tool_opt)
         }
-        _ => {}
-    }
+        _ => PostAction::None,
+    };
 
-    if Confirm::new("Skip file copying?")
+    let skip_copy = Confirm::new("Skip file copying?")
         .with_default(false)
-        .prompt()?
-    {
-        extra.push("--no-copy".to_string());
-    }
+        .prompt()?;
 
-    Ok((extra, ai_tool))
+    Ok((action, skip_copy))
 }
 
-/// Prompt for post-creation args, then execute the worktree creation and optional AI launch.
-pub(crate) fn run_with_post_prompt(mut args: Vec<String>, branch: &str) -> Result<()> {
-    let (extra, ai_tool) = prompt_post_args()?;
-    args.extend(extra);
+/// Prompt for post-creation preferences, then create the worktree and run post-actions.
+pub(crate) fn run_with_post_prompt(opts: &NewWorktreeOpts) -> Result<()> {
+    let (post_action, skip_copy) = prompt_post_args()?;
 
-    let args_str: Vec<&str> = args.iter().map(String::as_str).collect();
-    gtr::exec(&args_str)?;
+    let path = worktree_ops::worktree_dir_path(&opts.branch)?;
 
-    if let Some(tool) = &ai_tool {
-        gtr::exec(&["ai", branch, "--ai", tool])?;
+    git::worktree_add(&path, &opts.branch, opts.start_point.as_deref())?;
+
+    if !skip_copy {
+        worktree_ops::copy_files(&path, None)?;
+    }
+
+    if let Err(e) = worktree_ops::run_hook("gtr.hook.postCreate", &path) {
+        eprintln!("Warning: hook 'gtr.hook.postCreate' failed: {e}");
+    }
+
+    match post_action {
+        PostAction::Editor => worktree_ops::open_editor(&path, None)?,
+        PostAction::Ai(tool) => worktree_ops::start_ai(&path, tool.as_deref())?,
+        PostAction::None => {}
     }
 
     Ok(())
+}
+
+/// Prompt the user to select a worktree and a tool, then run `action(path, tool)`.
+///
+/// `tools` must contain `"default"` as the first item; selecting it passes `None`
+/// to `action`.
+pub(crate) fn run_with_tool_selection(
+    tool_prompt: &str,
+    tools: &[&str],
+    help_msg: &str,
+    action: fn(&str, Option<&str>) -> Result<()>,
+) -> Result<()> {
+    let wts = git::worktree_list()?;
+    let branches: Vec<String> = wts.iter().map(|w| w.branch.clone()).collect();
+    if branches.is_empty() {
+        bail!("No worktrees found");
+    }
+
+    let branch = Select::new("Select worktree:", branches).prompt()?;
+    let path = wts
+        .iter()
+        .find(|w| w.branch == branch)
+        .map(|w| w.path.clone())
+        .ok_or_else(|| anyhow::anyhow!("No worktree for branch '{branch}'"))?;
+
+    let tool = Select::new(tool_prompt, tools.to_vec())
+        .with_help_message(help_msg)
+        .prompt()?;
+    let tool_arg = if tool == "default" { None } else { Some(tool) };
+
+    action(&path, tool_arg)
 }

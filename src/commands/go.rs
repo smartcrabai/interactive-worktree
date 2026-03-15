@@ -2,15 +2,22 @@ use anyhow::{Result, bail};
 use inquire::Select;
 
 use crate::git;
-use crate::gtr;
 
 pub fn run() -> Result<()> {
-    let branches = git::all_worktree_branches()?;
-    if branches.is_empty() {
+    let wts = git::worktree_list()?;
+    if wts.is_empty() {
         bail!("No worktrees found");
     }
 
+    let branches: Vec<String> = wts.iter().map(|w| w.branch.clone()).collect();
     let branch = Select::new("Select worktree:", branches).prompt()?;
 
-    gtr::exec(&["go", &branch])
+    let path = wts
+        .iter()
+        .find(|w| w.branch == branch)
+        .map(|w| &w.path)
+        .ok_or_else(|| anyhow::anyhow!("Worktree not found for branch '{branch}'"))?;
+
+    println!("{path}");
+    Ok(())
 }

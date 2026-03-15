@@ -1,7 +1,8 @@
 use anyhow::Result;
 use inquire::{Select, Text};
 
-use crate::commands::run_with_post_prompt;
+use crate::commands::{NewWorktreeOpts, run_with_post_prompt};
+use crate::git;
 
 pub fn run() -> Result<()> {
     let branch = Text::new("Branch name:")
@@ -11,17 +12,20 @@ pub fn run() -> Result<()> {
     let from_options = vec!["Default (main/master)", "Current branch", "Specific ref"];
     let from = Select::new("Starting point:", from_options).prompt()?;
 
-    let mut args = vec!["new".to_string(), branch.clone()];
-
-    match from {
-        "Current branch" => args.push("--from-current".to_string()),
+    let start_point = match from {
+        "Current branch" => None,
         "Specific ref" => {
             let ref_value = Text::new("Ref (branch/tag/commit):").prompt()?;
-            args.push("--from".to_string());
-            args.push(ref_value);
+            Some(ref_value)
         }
-        _ => {}
-    }
+        _ => {
+            let default = git::default_branch()?;
+            Some(format!("origin/{default}"))
+        }
+    };
 
-    run_with_post_prompt(args, &branch)
+    run_with_post_prompt(&NewWorktreeOpts {
+        branch,
+        start_point,
+    })
 }

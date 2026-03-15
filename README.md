@@ -1,14 +1,12 @@
 # interactive-worktree
 
-Interactive CLI wrapper for [git-worktree-runner](https://github.com/coderabbitai/git-worktree-runner).
+Interactive CLI for managing git worktrees.
 
 ![Demo](demo.gif)
 
 ## Requirements
 
-- [git-worktree-runner](https://github.com/coderabbitai/git-worktree-runner)
 - Git 2.17+
-- Bash 3.2+ (4.0+ recommended)
 
 ## Installation
 
@@ -38,4 +36,16 @@ cargo install --git https://github.com/smartcrabai/interactive-worktree
 
 ```bash
 iwt
+```
+
+## Development
+
+### Library
+
+`interactive-worktree` can also be used as a library crate and exposes the `git` and `gh` modules.
+
+### Running tests
+
+```bash
+cargo test
 ```

@@ -1,7 +1,10 @@
 mod commands;
-mod gh;
-mod git;
-mod gtr;
+mod worktree_ops;
+
+// Re-export library modules into the binary crate namespace so that
+// `commands::*` sub-modules can continue to use `crate::git` and `crate::gh`.
+pub(crate) use interactive_worktree::gh;
+pub(crate) use interactive_worktree::git;
 
 use std::fmt;
 use std::process;
@@ -76,18 +79,6 @@ fn main() {
         eprintln!(
             "{} Not inside a git repository.",
             style("error:").red().bold()
-        );
-        process::exit(1);
-    }
-
-    if !gtr::is_available() {
-        eprintln!(
-            "{} git-gtr is not installed or not in PATH.",
-            style("error:").red().bold()
-        );
-        eprintln!(
-            "Install it from: {}",
-            style("https://github.com/coderabbitai/git-worktree-runner").cyan()
         );
         process::exit(1);
     }

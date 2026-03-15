@@ -1,11 +1,11 @@
 use anyhow::{Result, bail};
 use inquire::{MultiSelect, Text};
 
-use crate::git;
-use crate::gtr;
+use crate::{git, worktree_ops};
 
 pub fn run() -> Result<()> {
-    let branches = git::worktree_branches()?;
+    let wts = git::worktree_list()?;
+    let branches: Vec<String> = wts.iter().skip(1).map(|w| w.branch.clone()).collect();
     if branches.is_empty() {
         bail!("No worktrees to copy to (only main worktree exists)");
     }
@@ -23,13 +23,24 @@ pub fn run() -> Result<()> {
         .with_help_message("e.g. *.json, package-lock.json")
         .prompt()?;
 
+    let pattern_opt = if pattern.is_empty() {
+        None
+    } else {
+        Some(pattern.as_str())
+    };
+
     for target in &targets {
-        let mut args: Vec<&str> = vec!["copy", target];
-        if !pattern.is_empty() {
-            args.push(&pattern);
-        }
-        if let Err(e) = gtr::exec(&args) {
-            eprintln!("Failed to copy to {target}: {e}");
+        let Some(path) = wts
+            .iter()
+            .find(|w| &w.branch == target)
+            .map(|w| w.path.clone())
+        else {
+            eprintln!("Worktree not found for '{target}', skipping.");
+            continue;
+        };
+
+        if let Err(e) = worktree_ops::copy_files(&path, pattern_opt) {
+            eprintln!("Failed to copy to '{target}': {e}");
         }
     }
 
