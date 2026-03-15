@@ -1,7 +1,10 @@
 mod commands;
-mod gh;
-mod git;
 mod gtr;
+
+// Re-export library modules into the binary crate namespace so that
+// `commands::*` sub-modules can continue to use `crate::git` and `crate::gh`.
+pub(crate) use interactive_worktree::gh;
+pub(crate) use interactive_worktree::git;
 
 use std::fmt;
 use std::process;

@@ -30,6 +30,10 @@ impl fmt::Display for PullRequest {
 }
 
 /// Fetch open pull requests from the current repository.
+///
+/// # Errors
+///
+/// Returns an error if the `gh` command fails or the output cannot be parsed as JSON.
 pub fn pr_list() -> Result<Vec<PullRequest>> {
     let output = Command::new("gh")
         .args([
