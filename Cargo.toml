@@ -7,6 +7,9 @@ name = "interactive-worktree"
 repository = "https://github.com/smartcrabai/interactive-worktree"
 version = "0.1.10"
 
+[package.metadata.dist]
+formula = "iwt"
+
 [[bin]]
 name = "iwt"
 path = "src/main.rs"
@@ -30,9 +33,6 @@ unwrap_used = "deny"
 codegen-units = 1
 lto = true
 strip = true
-
-[package.metadata.dist]
-formula = "iwt"
 
 # The profile that 'dist' will build with
 [profile.dist]

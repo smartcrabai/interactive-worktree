@@ -128,9 +128,39 @@ pub fn start_ai(worktree_path: &str, tool: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+pub(crate) const WORKTREEINCLUDE_FILE: &str = ".worktreeinclude";
+
+/// Read `.worktreeinclude` from the repo root and return include patterns.
+///
+/// Returns an empty Vec if the file does not exist.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read (other than not-found).
+fn read_worktreeinclude(root: &str) -> Result<Vec<String>> {
+    let path = std::path::Path::new(root).join(WORKTREEINCLUDE_FILE);
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "Failed to read {WORKTREEINCLUDE_FILE}: {e}"
+            ));
+        }
+    };
+
+    Ok(content
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(String::from)
+        .collect())
+}
+
 /// Copy files from the main worktree into `target_path`.
 ///
-/// If `pattern` is given it overrides the `gtr.copy.include` config.
+/// If `pattern` is given it overrides both `.worktreeinclude` and the `gtr.copy.include` config.
 /// Files matching `gtr.copy.exclude` patterns are skipped.
 /// Returns `Ok(())` immediately when no include patterns are configured.
 ///
@@ -143,19 +173,22 @@ pub fn copy_files(target_path: &str, pattern: Option<&str>) -> Result<()> {
     let includes: Vec<String> = if let Some(p) = pattern {
         vec![p.to_string()]
     } else {
-        let inc = git::config_get("gtr.copy.include")?.unwrap_or_default();
-        if inc.is_empty() {
+        let mut patterns = read_worktreeinclude(&source)?;
+
+        if let Some(config_inc) = git::config_get("gtr.copy.include")? {
+            patterns.extend(
+                config_inc
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+            );
+        }
+
+        if patterns.is_empty() {
             return Ok(());
         }
-        inc.split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
+        patterns
     };
-
-    if includes.is_empty() {
-        return Ok(());
-    }
 
     let excludes: Vec<String> = git::config_get("gtr.copy.exclude")?
         .unwrap_or_default()
@@ -265,4 +298,198 @@ pub fn remove_with_hooks(path: &str, branch: &str, delete_branch: bool, force: b
 
     run_hook("gtr.hook.postRemove", &repo_root).ok();
     Ok(())
+}
+
+#[cfg(test)]
+#[expect(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use std::sync::{Mutex, MutexGuard};
+
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    struct TempRepo {
+        path: PathBuf,
+        original_cwd: PathBuf,
+        _lock: MutexGuard<'static, ()>,
+    }
+
+    impl TempRepo {
+        fn new() -> Self {
+            let lock = SERIAL
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let original_cwd = std::env::current_dir().expect("failed to get cwd");
+
+            let tmp_root = std::env::temp_dir().join(format!(
+                "iwt-worktreeops-test-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .subsec_nanos()
+            ));
+            fs::create_dir_all(&tmp_root).expect("failed to create temp dir");
+
+            run_git(&tmp_root, &["init", "-b", "main"]);
+            run_git(&tmp_root, &["config", "user.email", "test@example.com"]);
+            run_git(&tmp_root, &["config", "user.name", "Test"]);
+
+            let readme = tmp_root.join("README.md");
+            fs::write(&readme, "# test repo\n").expect("failed to write README");
+            run_git(&tmp_root, &["add", "README.md"]);
+            run_git(&tmp_root, &["commit", "-m", "initial commit"]);
+
+            std::env::set_current_dir(&tmp_root).expect("failed to chdir");
+
+            Self {
+                path: tmp_root,
+                original_cwd,
+                _lock: lock,
+            }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempRepo {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original_cwd);
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    fn run_git(dir: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .unwrap_or_else(|e| panic!("failed to spawn git: {e}"));
+        assert!(
+            status.success(),
+            "git {} failed (exit {:?})",
+            args.join(" "),
+            status.code()
+        );
+    }
+
+    #[test]
+    fn test_copy_files_no_worktreeinclude_uses_git_config() {
+        // Given: a repo without .worktreeinclude, but gtr.copy.include is set via git config
+        let repo = TempRepo::new();
+        fs::write(repo.path().join("notes.txt"), "notes").expect("write failed");
+        let target = repo.path().join("target");
+        fs::create_dir_all(&target).expect("mkdir target failed");
+        run_git(repo.path(), &["config", "gtr.copy.include", "*.txt"]);
+
+        // When: copying files without an explicit pattern
+        super::copy_files(target.to_str().unwrap(), None).expect("copy_files failed");
+
+        // Then: notes.txt is copied via the git config pattern
+        assert!(
+            target.join("notes.txt").exists(),
+            "notes.txt should be copied when gtr.copy.include=*.txt"
+        );
+    }
+
+    #[test]
+    fn test_copy_files_worktreeinclude_copies_matching_files() {
+        // Given: a repo with .worktreeinclude containing *.env, no git config set
+        let repo = TempRepo::new();
+        fs::write(repo.path().join(".worktreeinclude"), "*.env\n").expect("write failed");
+        fs::write(repo.path().join("secret.env"), "SECRET=1").expect("write failed");
+        fs::write(repo.path().join("other.txt"), "other").expect("write failed");
+        let target = repo.path().join("target");
+        fs::create_dir_all(&target).expect("mkdir target failed");
+
+        // When: copying files without an explicit pattern and no git config
+        super::copy_files(target.to_str().unwrap(), None).expect("copy_files failed");
+
+        // Then: secret.env is copied, other.txt is not
+        assert!(
+            target.join("secret.env").exists(),
+            "secret.env should be copied via .worktreeinclude"
+        );
+        assert!(
+            !target.join("other.txt").exists(),
+            "other.txt should NOT be copied (not in .worktreeinclude)"
+        );
+    }
+
+    #[test]
+    fn test_copy_files_merges_worktreeinclude_and_git_config() {
+        // Given: .worktreeinclude has *.env, git config has *.txt — both should apply
+        let repo = TempRepo::new();
+        fs::write(repo.path().join(".worktreeinclude"), "*.env\n").expect("write failed");
+        fs::write(repo.path().join("secret.env"), "SECRET=1").expect("write failed");
+        fs::write(repo.path().join("config.txt"), "config").expect("write failed");
+        fs::write(repo.path().join("readme.md"), "readme").expect("write failed");
+        let target = repo.path().join("target");
+        fs::create_dir_all(&target).expect("mkdir target failed");
+        run_git(repo.path(), &["config", "gtr.copy.include", "*.txt"]);
+
+        // When: copying without an explicit pattern
+        super::copy_files(target.to_str().unwrap(), None).expect("copy_files failed");
+
+        // Then: both *.env and *.txt files are copied; *.md is not
+        assert!(
+            target.join("secret.env").exists(),
+            "secret.env should be copied via .worktreeinclude"
+        );
+        assert!(
+            target.join("config.txt").exists(),
+            "config.txt should be copied via gtr.copy.include"
+        );
+        assert!(
+            !target.join("readme.md").exists(),
+            "readme.md should NOT be copied"
+        );
+    }
+
+    #[test]
+    fn test_copy_files_worktreeinclude_ignores_comments_and_blank_lines() {
+        // Given: .worktreeinclude with comment lines and blank lines mixed in
+        let repo = TempRepo::new();
+        let content = "# This is a comment\n\n*.env\n\n# Another comment\n";
+        fs::write(repo.path().join(".worktreeinclude"), content).expect("write failed");
+        fs::write(repo.path().join("secret.env"), "SECRET=1").expect("write failed");
+        let target = repo.path().join("target");
+        fs::create_dir_all(&target).expect("mkdir target failed");
+
+        // When: copying files
+        super::copy_files(target.to_str().unwrap(), None).expect("copy_files failed");
+
+        // Then: only the real pattern (*.env) takes effect
+        assert!(
+            target.join("secret.env").exists(),
+            "secret.env should be copied (only real pattern in .worktreeinclude)"
+        );
+    }
+
+    #[test]
+    fn test_copy_files_explicit_pattern_ignores_worktreeinclude() {
+        // Given: .worktreeinclude has *.env, but caller passes an explicit pattern *.txt
+        let repo = TempRepo::new();
+        fs::write(repo.path().join(".worktreeinclude"), "*.env\n").expect("write failed");
+        fs::write(repo.path().join("secret.env"), "SECRET=1").expect("write failed");
+        fs::write(repo.path().join("config.txt"), "config").expect("write failed");
+        let target = repo.path().join("target");
+        fs::create_dir_all(&target).expect("mkdir target failed");
+
+        // When: copying with an explicit pattern
+        super::copy_files(target.to_str().unwrap(), Some("*.txt")).expect("copy_files failed");
+
+        // Then: only *.txt is copied; .worktreeinclude patterns are ignored
+        assert!(
+            target.join("config.txt").exists(),
+            "config.txt should be copied via explicit pattern"
+        );
+        assert!(
+            !target.join("secret.env").exists(),
+            "secret.env should NOT be copied when explicit pattern overrides .worktreeinclude"
+        );
+    }
 }

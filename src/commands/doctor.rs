@@ -40,5 +40,14 @@ pub fn run() -> Result<()> {
         }
     }
 
+    let root = git::repo_root()?;
+    let include_path = std::path::Path::new(&root).join(crate::worktree_ops::WORKTREEINCLUDE_FILE);
+    let status = if include_path.exists() {
+        "found"
+    } else {
+        "not found"
+    };
+    println!("\n.worktreeinclude: {status}");
+
     Ok(())
 }
