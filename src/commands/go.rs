@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use inquire::Select;
 
-use crate::git;
+use crate::{git, worktree_ops};
 
 pub fn run() -> Result<()> {
     let wts = git::worktree_list()?;
@@ -19,5 +19,6 @@ pub fn run() -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Worktree not found for branch '{branch}'"))?;
 
     println!("{path}");
+    worktree_ops::request_cd(path)?;
     Ok(())
 }

@@ -39,7 +39,7 @@ impl fmt::Display for Command {
             Command::Rm => write!(f, "rm       - Remove worktree(s)"),
             Command::Editor => write!(f, "editor   - Open worktree in editor"),
             Command::Ai => write!(f, "ai       - Start AI tool in worktree"),
-            Command::Go => write!(f, "go       - Print worktree path"),
+            Command::Go => write!(f, "go       - Go to worktree directory"),
             Command::Run => write!(f, "run      - Run command in worktree"),
             Command::Copy => write!(f, "copy     - Copy files to worktree(s)"),
             Command::Clean => write!(f, "clean    - Clean stale worktrees"),

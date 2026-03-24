@@ -278,6 +278,24 @@ pub fn run_hook(hook_key: &str, worktree_path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Write the given `path` to the file specified by `IWT_CD_FILE`.
+///
+/// This enables the shell integration function to `cd` into the worktree
+/// after the binary exits. If `IWT_CD_FILE` is not set, this is a no-op
+/// so that the binary works correctly without shell integration.
+///
+/// # Errors
+///
+/// Returns an error if `IWT_CD_FILE` is set but the file cannot be written.
+pub fn request_cd(path: &str) -> Result<()> {
+    let Ok(cd_file) = std::env::var("IWT_CD_FILE") else {
+        return Ok(());
+    };
+    std::fs::write(&cd_file, path)
+        .with_context(|| format!("Failed to write cd file '{cd_file}'"))?;
+    Ok(())
+}
+
 /// Remove a worktree and optionally its branch, running pre/post hooks.
 ///
 /// If `worktree_remove` fails the error is propagated. `branch_delete` failures
@@ -303,12 +321,14 @@ pub fn remove_with_hooks(path: &str, branch: &str, delete_branch: bool, force: b
 #[cfg(test)]
 #[expect(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    use super::*;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::{Mutex, MutexGuard};
 
     static SERIAL: Mutex<()> = Mutex::new(());
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     struct TempRepo {
         path: PathBuf,
@@ -374,6 +394,41 @@ mod tests {
             args.join(" "),
             status.code()
         );
+    }
+
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_MUTEX
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// RAII guard: sets `IWT_CD_FILE` on construction, clears it (and an optional
+    /// temp file) on drop so cleanup is panic-safe.
+    struct CdFileGuard {
+        file: Option<std::path::PathBuf>,
+    }
+
+    impl CdFileGuard {
+        fn set(val: &str) -> Self {
+            unsafe { std::env::set_var("IWT_CD_FILE", val) };
+            Self { file: None }
+        }
+
+        fn set_file(path: &std::path::Path) -> Self {
+            unsafe { std::env::set_var("IWT_CD_FILE", path.to_string_lossy().as_ref()) };
+            Self {
+                file: Some(path.to_owned()),
+            }
+        }
+    }
+
+    impl Drop for CdFileGuard {
+        fn drop(&mut self) {
+            unsafe { std::env::remove_var("IWT_CD_FILE") };
+            if let Some(f) = &self.file {
+                let _ = std::fs::remove_file(f);
+            }
+        }
     }
 
     #[test]
@@ -491,5 +546,48 @@ mod tests {
             !target.join("secret.env").exists(),
             "secret.env should NOT be copied when explicit pattern overrides .worktreeinclude"
         );
+    }
+
+    #[test]
+    fn test_request_cd_noop_when_env_var_not_set() {
+        let _lock = lock_env();
+        unsafe { std::env::remove_var("IWT_CD_FILE") };
+        assert!(request_cd("/some/worktree/path").is_ok());
+    }
+
+    #[test]
+    fn test_request_cd_writes_path_to_file_when_env_var_set() -> Result<()> {
+        let _lock = lock_env();
+        let tmp_file = std::env::temp_dir().join("iwt_cd_write_test.txt");
+        let _guard = CdFileGuard::set_file(&tmp_file);
+        request_cd("/repo/worktrees/my-feature")?;
+        let written = std::fs::read_to_string(&tmp_file)?;
+        assert_eq!(written, "/repo/worktrees/my-feature");
+        Ok(())
+    }
+
+    #[test]
+    fn test_request_cd_returns_error_when_write_fails() {
+        let _lock = lock_env();
+        let _guard = CdFileGuard::set("/nonexistent/directory/cd_file.txt");
+        let Err(e) = request_cd("/some/path") else {
+            panic!("expected request_cd to return an error");
+        };
+        assert!(
+            e.to_string().contains("Failed to write cd file"),
+            "expected write-failure message, got: {e}"
+        );
+    }
+
+    #[test]
+    fn test_request_cd_overwrites_existing_file_content() -> Result<()> {
+        let _lock = lock_env();
+        let tmp_file = std::env::temp_dir().join("iwt_cd_overwrite_test.txt");
+        let _ = std::fs::write(&tmp_file, "stale_path");
+        let _guard = CdFileGuard::set_file(&tmp_file);
+        request_cd("/new/worktree/path")?;
+        let written = std::fs::read_to_string(&tmp_file)?;
+        assert_eq!(written, "/new/worktree/path");
+        Ok(())
     }
 }

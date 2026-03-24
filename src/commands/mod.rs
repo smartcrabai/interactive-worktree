@@ -22,6 +22,7 @@ pub(crate) enum PostAction {
     None,
     Editor,
     Ai(Option<String>),
+    Go,
 }
 
 /// Options for creating a new worktree.
@@ -37,7 +38,7 @@ pub(crate) struct NewWorktreeOpts {
 pub(crate) fn prompt_post_args() -> Result<(PostAction, bool)> {
     let post = Select::new(
         "After creation:",
-        vec!["None", "Open in editor", "Start AI tool"],
+        vec!["None", "Open in editor", "Start AI tool", "Go to directory"],
     )
     .with_help_message("Action to take after creating the worktree")
     .prompt()?;
@@ -52,6 +53,7 @@ pub(crate) fn prompt_post_args() -> Result<(PostAction, bool)> {
             let tool_opt = if tool.is_empty() { None } else { Some(tool) };
             PostAction::Ai(tool_opt)
         }
+        "Go to directory" => PostAction::Go,
         _ => PostAction::None,
     };
 
@@ -81,6 +83,7 @@ pub(crate) fn run_with_post_prompt(opts: &NewWorktreeOpts) -> Result<()> {
     match post_action {
         PostAction::Editor => worktree_ops::open_editor(&path, None)?,
         PostAction::Ai(tool) => worktree_ops::start_ai(&path, tool.as_deref())?,
+        PostAction::Go => worktree_ops::request_cd(&path)?,
         PostAction::None => {}
     }
 
