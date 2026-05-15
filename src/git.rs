@@ -43,8 +43,7 @@ pub fn is_inside_repo() -> bool {
     Command::new("git")
         .args(["rev-parse", "--is-inside-work-tree"])
         .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
-        .unwrap_or(false)
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
 }
 
 /// Get local branch names.
