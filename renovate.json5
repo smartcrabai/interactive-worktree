@@ -44,12 +44,11 @@
       minimumReleaseAge: "7 days"
     },
     {
-      // digest / pinDigest は releaseTimestamp を持たない。minimumReleaseAge を
-      // 課すと minimumReleaseAgeBehaviour の既定値 "timestamp-required" により
-      // 無条件で stabilityStatus=yellow となり、renovate/stability-days が
-      // 恒久的に pending のままマージ不能になる(時間経過では解消しない)。
-      // digest は同一タグの追従であり「リリースからN日」の概念自体が成立しないため除外する。
-      // github-actions ルールを上書きするため、必ず最後に置くこと。
+      // digest / pinDigest updates have no releaseTimestamp. Applying
+      // minimumReleaseAge would make the default timestamp-required behavior
+      // keep stabilityStatus=yellow and renovate/stability-days permanently
+      // pending. A digest follows the same tag, so release age is not
+      // meaningful. Keep this override after the github-actions rule.
       matchUpdateTypes: [
         "digest",
         "pinDigest"
